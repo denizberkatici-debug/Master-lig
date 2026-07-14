@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Halısaha Ligi</title>
+
+<!-- ====== BURAYI DOLDUR (Supabase Ayarları) ======
+  1) https://supabase.com adresinde ücretsiz hesap aç, "New Project" oluştur.
+  2) Sol menüden "SQL Editor" -> aşağıdaki SQL'i çalıştır:
+
+     create table league_data (
+       id text primary key,
+       data jsonb,
+       updated_at timestamptz default now()
+     );
+     insert into league_data (id, data) values ('main', '{}');
+     alter table league_data enable row level security;
+     create policy "allow anon read" on league_data for select using (true);
+     create policy "allow anon update" on league_data for update using (true);
+
+  3) Sol menüden Settings -> API -> "Project URL" ve "anon public" anahtarını kopyala.
+  4) Aşağıdaki satırlara yapıştır. EDIT_PASSWORD'ü de istediğin bir şifreyle değiştir
+     (bu şifreyi bilen "Düzenle" butonuyla veri ekleyip değiştirebilir, bilmeyen sadece görüntüler).
+========================================================= -->
+<script>
+  window.SUPABASE_URL = "BURAYA_PROJE_URL";
+  window.SUPABASE_ANON_KEY = "BURAYA_ANON_KEY";
+  window.EDIT_PASSWORD = "2642";
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+  body { margin:0; font-family:'Inter',sans-serif; }
+  .disp { font-family:'Oswald',sans-serif; text-transform:uppercase; }
+  .tabnums { font-variant-numeric: tabular-nums; }
+  .pitch-lines { background-image: repeating-linear-gradient(90deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 64px); }
+  input, select { background: rgba(6,35,24,0.6); border:1px solid rgba(245,243,231,0.18); color:#F3F1E7; border-radius:6px; padding:6px 10px; font-size:13px; outline:none; }
+  input:focus, select:focus { border-color:#FFB238; box-shadow:0 0 0 2px rgba(255,178,56,0.2); }
+  button:focus-visible, [tabindex]:focus-visible { outline:2px solid #FFB238; outline-offset:2px; }
+  .btn-amber { background:#FFB238; color:#082A1F; font-weight:600; }
+  .btn-amber:hover { background:#ffc35f; }
+  .btn-ghost { background:transparent; border:1px solid rgba(245,243,231,0.25); color:#F3F1E7; }
+  .btn-ghost:hover { border-color:#FFB238; color:#FFB238; }
+  table { border-collapse:collapse; width:100%; }
+  th { text-align:left; font-size:11px; letter-spacing:0.08em; color:rgba(243,241,231,0.5); font-weight:600; padding:8px 10px; }
+  td { padding:10px 10px; font-size:14px; border-top:1px solid rgba(245,243,231,0.06); }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .ticker-wrap { overflow:hidden; background:#062318; border-top:1px solid rgba(255,178,56,0.25); border-bottom:1px solid rgba(255,178,56,0.25); padding:7px 0; }
+  .ticker-track { display:flex; width:max-content; animation: ticker-scroll 22s linear infinite; }
+  .ticker-text { font-family:'JetBrains Mono',monospace; font-size:13px; letter-spacing:0.12em; color:#FFB238; text-shadow:0 0 6px rgba(255,178,56,0.55); padding-right:60px; white-space:nowrap; }
+  @keyframes ticker-scroll { from{transform:translateX(0);} to{transform:translateX(-50%);} }
+  @media (prefers-reduced-motion: reduce) { .ticker-track { animation:none; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback, useMemo } = React;
+
+const TEAM_COLORS = ["#FFB238", "#5FB0FF", "#FF6B6B", "#8CE99A", "#D5A6FF", "#FFD93D"];
+const uid = (p) => `${p}${Math.random().toString(36).slice(2, 9)}`;
+
+const seedData = () => ({
+  leagueName: "Salı Akşamı Halısaha Ligi",
+  season: "2026 Yaz Sezonu",
+  teams: [
+    { id:"t1", name:"Kartallar SK", color:TEAM_COLORS[0], players:[
+      { id:"p1", name:"Emre Yıldız", number:9, goals:6 },
+      { id:"p2", name:"Barış Kaya", number:7, goals:2 } ] },
+    { id:"t2", name:"Rüzgar United", color:TEAM_COLORS[1], players:[
+      { id:"p3", name:"Deniz Aydın", number:10, goals:4 },
+      { id:"p4", name:"Onur Şahin", number:4, goals:1 } ] },
+    { id:"t3", name:"Demir Çelik FC", color:TEAM_COLORS[2], players:[
+      { id:"p5", name:"Kerem Doğan", number:11, goals:5 },
+      { id:"p6", name:"Tolga Er", number:5, goals:0 } ] },
+    { id:"t4", name:"Panter FK", color:TEAM_COLORS[3], players:[
+      { id:"p7", name:"Yusuf Acar", number:8, goals:3 },
+      { id:"p8", name:"Mert Polat", number:2, goals:1 } ] },
+  ],
+  matches: [
+    { id:"m1", week:1, date:"2026-07-01", homeTeamId:"t1", awayTeamId:"t2", homeScore:4, awayScore:2, played:true },
+    { id:"m2", week:1, date:"2026-07-01", homeTeamId:"t3", awayTeamId:"t4", homeScore:3, awayScore:3, played:true },
+    { id:"m3", week:2, date:"2026-07-08", homeTeamId:"t1", awayTeamId:"t3", homeScore:2, awayScore:1, played:true },
+    { id:"m4", week:2, date:"2026-07-08", homeTeamId:"t2", awayTeamId:"t4", homeScore:1, awayScore:1, played:true },
+    { id:"m5", week:3, date:"2026-07-15", homeTeamId:"t1", awayTeamId:"t4", homeScore:null, awayScore:null, played:false },
+    { id:"m6", week:3, date:"2026-07-15", homeTeamId:"t2", awayTeamId:"t3", homeScore:null, awayScore:null, played:false },
+  ],
+});
+
+const ICONS = {
+  trophy:"🏆", calendar:"📅", users:"👥", goal:"⚽", lock:"🔒", unlock:"🔓",
+  plus:"➕", trash:"🗑️", shield:"🛡️", chevron:"▶",
+};
+function Icon({ name, size=15, style }) {
+  return <span style={{ fontSize:size, lineHeight:1, ...style }}>{ICONS[name]}</span>;
+}
+
+function LEDTicker({ text }) {
+  return (
+    <div className="ticker-wrap">
+      <div className="ticker-track">
+        <span className="ticker-text">{text}</span>
+        <span className="ticker-text">{text}</span>
+      </div>
+    </div>
+  );
+}
+
+function Panel({ children }) {
+  return <div style={{ background:"linear-gradient(180deg, #0F4A34 0%, #0B3D2E 100%)", border:"1px solid rgba(245,243,231,0.08)", borderRadius:10 }}>{children}</div>;
+}
+
+function EmptyState({ iconName, title, hint }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-14 px-6">
+      <Icon name={iconName} size={28} style={{opacity:0.4}} />
+      <p className="mt-3 font-semibold" style={{ color:"#F3F1E7" }}>{title}</p>
+      <p className="text-sm mt-1" style={{ color:"rgba(243,241,231,0.5)" }}>{hint}</p>
+    </div>
+  );
+}
+
+let supabaseClient = null;
+function getClient() {
+  if (supabaseClient) return supabaseClient;
+  if (!window.SUPABASE_URL || window.SUPABASE_URL === "BURAYA_PROJE_URL") return null;
+  supabaseClient = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+  return supabaseClient;
+}
+
+function App() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [configError, setConfigError] = useState(false);
+  const [tab, setTab] = useState("standings");
+  const [editMode, setEditMode] = useState(false);
+  const [saveState, setSaveState] = useState("idle");
+
+  useEffect(() => {
+    (async () => {
+      const client = getClient();
+      if (!client) { setConfigError(true); setData(seedData()); setLoading(false); return; }
+      try {
+        const { data: row, error } = await client.from("league_data").select("data").eq("id","main").single();
+        if (error || !row || !row.data || Object.keys(row.data).length === 0) {
+          const seed = seedData();
+          await client.from("league_data").update({ data: seed }).eq("id","main");
+          setData(seed);
+        } else {
+          setData(row.data);
+        }
+      } catch (e) {
+        setConfigError(true);
+        setData(seedData());
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const persist = useCallback(async (next) => {
+    setData(next);
+    const client = getClient();
+    if (!client) return;
+    setSaveState("saving");
+    try {
+      const { error } = await client.from("league_data").update({ data: next, updated_at: new Date().toISOString() }).eq("id","main");
+      setSaveState(error ? "error" : "saved");
+    } catch (e) { setSaveState("error"); }
+    setTimeout(() => setSaveState("idle"), 1500);
+  }, []);
+
+  const standings = useMemo(() => {
+    if (!data) return [];
+    const table = Object.fromEntries(data.teams.map(t => [t.id, { team:t, P:0,W:0,D:0,L:0,GF:0,GA:0,GD:0,Pts:0 }]));
+    data.matches.forEach(m => {
+      if (!m.played || m.homeScore == null || m.awayScore == null) return;
+      const h = table[m.homeTeamId], a = table[m.awayTeamId];
+      if (!h || !a) return;
+      h.P++; a.P++; h.GF+=m.homeScore; h.GA+=m.awayScore; a.GF+=m.awayScore; a.GA+=m.homeScore;
+      if (m.homeScore > m.awayScore) { h.W++; h.Pts+=3; a.L++; }
+      else if (m.homeScore < m.awayScore) { a.W++; a.Pts+=3; h.L++; }
+      else { h.D++; a.D++; h.Pts++; a.Pts++; }
+    });
+    return Object.values(table).map(r => ({...r, GD:r.GF-r.GA})).sort((a,b)=> b.Pts-a.Pts || b.GD-a.GD || b.GF-a.GF);
+  }, [data]);
+
+  const topScorers = useMemo(() => {
+    if (!data) return [];
+    const list = [];
+    data.teams.forEach(t => t.players.forEach(p => list.push({...p, teamName:t.name, teamColor:t.color})));
+    return list.filter(p=>p.goals>0).sort((a,b)=>b.goals-a.goals).slice(0,15);
+  }, [data]);
+
+  const tickerText = useMemo(() => {
+    if (!data) return "";
+    const next = data.matches.find(m => !m.played);
+    const scorer = topScorers[0];
+    const teamName = (id) => data.teams.find(t=>t.id===id)?.name ?? "?";
+    const parts = [];
+    if (next) parts.push(`SIRADAKİ MAÇ — ${teamName(next.homeTeamId)} vs ${teamName(next.awayTeamId)} — HAFTA ${next.week}`);
+    if (scorer) parts.push(`GOL KRALI — ${scorer.name} (${scorer.goals} GOL)`);
+    if (standings[0]) parts.push(`LİDER — ${standings[0].team.name} (${standings[0].Pts} PUAN)`);
+    return parts.join("    •    ") || "HALISAHA LİGİNE HOŞ GELDİN";
+  }, [data, topScorers, standings]);
+
+  if (loading || !data) {
+    return <div className="min-h-screen flex items-center justify-center" style={{ background:"#0B3D2E", color:"#F3F1E7" }}>Saha ışıkları yakılıyor…</div>;
+  }
+
+  return (
+    <div className="min-h-screen" style={{ background:"radial-gradient(ellipse at top, #114935 0%, #0B3D2E 45%, #082A1F 100%)", color:"#F3F1E7" }}>
+      {configError && (
+        <div style={{ background:"#7a2b2b", color:"#fff", fontSize:13, padding:"8px 16px", textAlign:"center" }}>
+          Supabase bağlantısı ayarlanmadı — veriler kaydedilmiyor. index.html içindeki SUPABASE_URL / SUPABASE_ANON_KEY alanlarını doldur.
+        </div>
+      )}
+      <header className="pitch-lines" style={{ borderBottom:"1px solid rgba(255,178,56,0.2)" }}>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-4 flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Icon name="shield" size={20} style={{color:"#FFB238"}} />
+              <h1 className="disp text-2xl sm:text-3xl font-bold tracking-wide">{data.leagueName}</h1>
+            </div>
+            <p className="text-xs mt-1" style={{ color:"rgba(243,241,231,0.55)" }}>{data.season}</p>
+          </div>
+          <button onClick={()=>{
+              if (editMode) { setEditMode(false); return; }
+              const configured = window.EDIT_PASSWORD && window.EDIT_PASSWORD !== "BURAYA_SIFREN";
+              if (!configured) { setEditMode(true); return; }
+              const entered = window.prompt("Düzenleme şifresi:");
+              if (entered === null) return;
+              if (entered === window.EDIT_PASSWORD) setEditMode(true);
+              else window.alert("Şifre yanlış.");
+            }} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs shrink-0"
+            style={editMode ? {background:"#FFB238",color:"#082A1F",fontWeight:600} : {background:"rgba(245,243,231,0.08)",color:"#F3F1E7"}}>
+            <Icon name={editMode?"unlock":"lock"} size={13} /> {editMode ? "Düzenleme Açık" : "Düzenle"}
+          </button>
+        </div>
+        <nav className="max-w-5xl mx-auto px-4 sm:px-6 flex gap-1 overflow-x-auto pb-3">
+          {[{id:"standings",label:"Puan Durumu",icon:"trophy"},{id:"fixtures",label:"Fikstür",icon:"calendar"},{id:"teams",label:"Takımlar",icon:"users"},{id:"scorers",label:"Gol Kralı",icon:"goal"}].map(t=>{
+            const active = tab===t.id;
+            return (
+              <button key={t.id} onClick={()=>setTab(t.id)} className="disp flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm whitespace-nowrap"
+                style={active ? {background:"#0B3D2E",color:"#FFB238",border:"1px solid rgba(255,178,56,0.4)"} : {color:"rgba(243,241,231,0.6)",border:"1px solid transparent"}}>
+                <Icon name={t.icon} size={14} /> {t.label}
+              </button>
+            );
+          })}
+        </nav>
+      </header>
+
+      <LEDTicker text={tickerText} />
+
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+        {tab==="standings" && <StandingsView standings={standings} />}
+        {tab==="fixtures" && <FixturesView data={data} editMode={editMode} onChange={persist} />}
+        {tab==="teams" && <TeamsView data={data} editMode={editMode} onChange={persist} />}
+        {tab==="scorers" && <ScorersView topScorers={topScorers} />}
+      </main>
+
+      <footer className="max-w-5xl mx-auto px-4 sm:px-6 pb-8 pt-2 flex items-center justify-between text-xs" style={{ color:"rgba(243,241,231,0.35)" }}>
+        <span>Halısaha Ligi Yönetim Paneli</span>
+        <span className="tabnums">
+          {saveState==="saving" && "Kaydediliyor…"}
+          {saveState==="saved" && "Kaydedildi ✓"}
+          {saveState==="error" && "Kaydetme hatası"}
+        </span>
+      </footer>
+    </div>
+  );
+}
+
+function StandingsView({ standings }) {
+  if (standings.length===0) return <EmptyState iconName="trophy" title="Henüz takım yok" hint="Takımlar sekmesinden takım ekleyerek başla." />;
+  return (
+    <Panel>
+      <div className="overflow-x-auto">
+        <table>
+          <thead><tr><th>#</th><th>Takım</th><th className="text-center">O</th><th className="text-center">G</th><th className="text-center">B</th><th className="text-center">M</th><th className="text-center">A</th><th className="text-center">Y</th><th className="text-center">AV</th><th className="text-center">Puan</th></tr></thead>
+          <tbody>
+            {standings.map((r,i)=>(
+              <tr key={r.team.id}>
+                <td className="tabnums" style={{color:"rgba(243,241,231,0.5)"}}>{i+1}</td>
+                <td><div className="flex items-center gap-2 font-semibold"><span style={{width:10,height:10,borderRadius:3,background:r.team.color,display:"inline-block"}}/>{r.team.name}</div></td>
+                <td className="text-center tabnums">{r.P}</td>
+                <td className="text-center tabnums">{r.W}</td>
+                <td className="text-center tabnums">{r.D}</td>
+                <td className="text-center tabnums">{r.L}</td>
+                <td className="text-center tabnums">{r.GF}</td>
+                <td className="text-center tabnums">{r.GA}</td>
+                <td className="text-center tabnums">{r.GD>0?`+${r.GD}`:r.GD}</td>
+                <td className="text-center tabnums font-bold disp" style={{color:"#FFB238"}}>{r.Pts}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+function FixturesView({ data, editMode, onChange }) {
+  const teamName=(id)=>data.teams.find(t=>t.id===id)?.name ?? "—";
+  const teamColor=(id)=>data.teams.find(t=>t.id===id)?.color ?? "#888";
+  const weeks=[...new Set(data.matches.map(m=>m.week))].sort((a,b)=>a-b);
+  const updateMatch=(id,patch)=>onChange({...data, matches:data.matches.map(m=>m.id===id?{...m,...patch}:m)});
+  const deleteMatch=(id)=>onChange({...data, matches:data.matches.filter(m=>m.id!==id)});
+  const addMatch=()=>{
+    if (data.teams.length<2) return;
+    const newMatch={ id:uid("m"), week:(weeks[weeks.length-1]||0)+1, date:new Date().toISOString().slice(0,10), homeTeamId:data.teams[0].id, awayTeamId:data.teams[1].id, homeScore:null, awayScore:null, played:false };
+    onChange({...data, matches:[...data.matches,newMatch]});
+  };
+  if (data.matches.length===0) {
+    return editMode ? <Panel><div className="p-6"><button onClick={addMatch} className="btn-amber flex items-center gap-1.5 px-3 py-2 rounded-md text-sm"><Icon name="plus" size={14}/> Maç Ekle</button></div></Panel>
+      : <EmptyState iconName="calendar" title="Fikstür boş" hint="Düzenleme modunu açıp maç ekleyebilirsin." />;
+  }
+  return (
+    <div className="space-y-5">
+      {editMode && <button onClick={addMatch} className="btn-amber flex items-center gap-1.5 px-3 py-2 rounded-md text-sm disp"><Icon name="plus" size={14}/> Maç Ekle</button>}
+      {weeks.map(w=>(
+        <Panel key={w}>
+          <div className="px-4 pt-3 pb-1"><span className="disp text-sm font-semibold" style={{color:"#FFB238"}}>{w}. Hafta</span></div>
+          <div>
+            {data.matches.filter(m=>m.week===w).map(m=>(
+              <div key={m.id} className="px-4 py-3 flex items-center gap-3 flex-wrap" style={{borderTop:"1px solid rgba(245,243,231,0.06)"}}>
+                {!editMode ? (
+                  <>
+                    <span className="text-xs tabnums" style={{color:"rgba(243,241,231,0.45)",minWidth:78}}>{m.date}</span>
+                    <div className="flex-1 flex items-center justify-center gap-3 min-w-[220px]">
+                      <span className="flex items-center gap-1.5 font-medium text-sm justify-end flex-1 text-right">{teamName(m.homeTeamId)}<span style={{width:8,height:8,borderRadius:2,background:teamColor(m.homeTeamId)}}/></span>
+                      <span className="disp tabnums text-lg font-bold px-2" style={{color:m.played?"#F3F1E7":"rgba(243,241,231,0.35)"}}>{m.played?`${m.homeScore} – ${m.awayScore}`:"vs"}</span>
+                      <span className="flex items-center gap-1.5 font-medium text-sm flex-1"><span style={{width:8,height:8,borderRadius:2,background:teamColor(m.awayTeamId)}}/>{teamName(m.awayTeamId)}</span>
+                    </div>
+                    {!m.played && <span className="text-xs px-2 py-0.5 rounded" style={{background:"rgba(255,178,56,0.15)",color:"#FFB238"}}>Oynanmadı</span>}
+                  </>
+                ) : <MatchEditRow match={m} teams={data.teams} onUpdate={(patch)=>updateMatch(m.id,patch)} onDelete={()=>deleteMatch(m.id)} />}
+              </div>
+            ))}
+          </div>
+        </Panel>
+      ))}
+    </div>
+  );
+}
+
+function MatchEditRow({ match, teams, onUpdate, onDelete }) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap w-full">
+      <input type="date" value={match.date} onChange={e=>onUpdate({date:e.target.value})} style={{width:130}} />
+      <select value={match.week} onChange={e=>onUpdate({week:Number(e.target.value)})} style={{width:90}}>
+        {Array.from({length:20},(_,i)=>i+1).map(w=><option key={w} value={w}>Hafta {w}</option>)}
+      </select>
+      <select value={match.homeTeamId} onChange={e=>onUpdate({homeTeamId:e.target.value})} style={{minWidth:120}}>
+        {teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+      </select>
+      <input type="number" min="0" value={match.homeScore ?? ""} placeholder="-" onChange={e=>onUpdate({homeScore: e.target.value===""?null:Number(e.target.value)})} style={{width:48,textAlign:"center"}} />
+      <span style={{color:"rgba(243,241,231,0.4)"}}>–</span>
+      <input type="number" min="0" value={match.awayScore ?? ""} placeholder="-" onChange={e=>onUpdate({awayScore: e.target.value===""?null:Number(e.target.value)})} style={{width:48,textAlign:"center"}} />
+      <select value={match.awayTeamId} onChange={e=>onUpdate({awayTeamId:e.target.value})} style={{minWidth:120}}>
+        {teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+      </select>
+      <label className="flex items-center gap-1.5 text-xs" style={{color:"rgba(243,241,231,0.6)"}}>
+        <input type="checkbox" checked={match.played} onChange={e=>onUpdate({played:e.target.checked})} style={{width:"auto"}} /> Oynandı
+      </label>
+      <button onClick={onDelete} className="ml-auto p-1.5 rounded-md btn-ghost" aria-label="Maçı sil"><Icon name="trash" size={13}/></button>
+    </div>
+  );
+}
+
+function TeamsView({ data, editMode, onChange }) {
+  const [openTeam, setOpenTeam] = useState(data.teams[0]?.id ?? null);
+  const addTeam=()=>{
+    const color=TEAM_COLORS[data.teams.length % TEAM_COLORS.length];
+    const newTeam={ id:uid("t"), name:"Yeni Takım", color, players:[] };
+    onChange({...data, teams:[...data.teams,newTeam]}); setOpenTeam(newTeam.id);
+  };
+  const updateTeam=(id,patch)=>onChange({...data, teams:data.teams.map(t=>t.id===id?{...t,...patch}:t)});
+  const deleteTeam=(id)=>onChange({...data, teams:data.teams.filter(t=>t.id!==id), matches:data.matches.filter(m=>m.homeTeamId!==id && m.awayTeamId!==id)});
+  const addPlayer=(teamId)=>{ const team=data.teams.find(t=>t.id===teamId); const newPlayer={id:uid("p"),name:"Yeni Oyuncu",number:(team.players.length||0)+1,goals:0}; updateTeam(teamId,{players:[...team.players,newPlayer]}); };
+  const updatePlayer=(teamId,playerId,patch)=>{ const team=data.teams.find(t=>t.id===teamId); updateTeam(teamId,{players:team.players.map(p=>p.id===playerId?{...p,...patch}:p)}); };
+  const deletePlayer=(teamId,playerId)=>{ const team=data.teams.find(t=>t.id===teamId); updateTeam(teamId,{players:team.players.filter(p=>p.id!==playerId)}); };
+
+  if (data.teams.length===0) {
+    return editMode ? <Panel><div className="p-6"><button onClick={addTeam} className="btn-amber flex items-center gap-1.5 px-3 py-2 rounded-md text-sm disp"><Icon name="plus" size={14}/> Takım Ekle</button></div></Panel>
+      : <EmptyState iconName="users" title="Henüz takım yok" hint="Düzenleme modunu açıp ilk takımı ekleyebilirsin." />;
+  }
+  return (
+    <div className="space-y-4">
+      {editMode && <button onClick={addTeam} className="btn-amber flex items-center gap-1.5 px-3 py-2 rounded-md text-sm disp"><Icon name="plus" size={14}/> Takım Ekle</button>}
+      {data.teams.map(team=>{
+        const isOpen=openTeam===team.id;
+        return (
+          <Panel key={team.id}>
+            <button className="w-full flex items-center justify-between px-4 py-3.5" onClick={()=>setOpenTeam(isOpen?null:team.id)}>
+              <div className="flex items-center gap-3">
+                <span style={{width:12,height:12,borderRadius:3,background:team.color,display:"inline-block"}} />
+                {editMode ? <input value={team.name} onClick={e=>e.stopPropagation()} onChange={e=>updateTeam(team.id,{name:e.target.value})} style={{minWidth:160}} />
+                  : <span className="disp font-semibold text-lg">{team.name}</span>}
+                <span className="text-xs" style={{color:"rgba(243,241,231,0.45)"}}>{team.players.length} oyuncu</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {editMode && <span onClick={e=>{e.stopPropagation();deleteTeam(team.id);}} className="p-1.5 rounded-md btn-ghost" role="button" aria-label="Takımı sil"><Icon name="trash" size={13}/></span>}
+                <span style={{transform: isOpen?"rotate(90deg)":"none", transition:"transform 0.15s", color:"rgba(243,241,231,0.5)", display:"inline-block"}}><Icon name="chevron" size={12}/></span>
+              </div>
+            </button>
+            {isOpen && (
+              <div className="px-4 pb-4">
+                <table>
+                  <thead><tr><th style={{width:50}}>No</th><th>Oyuncu</th><th className="text-center" style={{width:70}}>Gol</th>{editMode && <th style={{width:40}}></th>}</tr></thead>
+                  <tbody>
+                    {team.players.map(p=>(
+                      <tr key={p.id}>
+                        <td className="tabnums">{editMode ? <input type="number" value={p.number} onChange={e=>updatePlayer(team.id,p.id,{number:Number(e.target.value)})} style={{width:48,textAlign:"center"}} /> : p.number}</td>
+                        <td>{editMode ? <input value={p.name} onChange={e=>updatePlayer(team.id,p.id,{name:e.target.value})} style={{minWidth:140}} /> : p.name}</td>
+                        <td className="text-center tabnums">{editMode ? <input type="number" value={p.goals} onChange={e=>updatePlayer(team.id,p.id,{goals:Number(e.target.value)})} style={{width:48,textAlign:"center"}} /> : <span className="font-semibold" style={{color:"#FFB238"}}>{p.goals}</span>}</td>
+                        {editMode && <td><button onClick={()=>deletePlayer(team.id,p.id)} className="p-1 rounded btn-ghost" aria-label="Oyuncuyu sil"><Icon name="trash" size={12}/></button></td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {team.players.length===0 && <p className="text-xs py-3" style={{color:"rgba(243,241,231,0.4)"}}>Kadroda henüz oyuncu yok.</p>}
+                {editMode && <button onClick={()=>addPlayer(team.id)} className="mt-2 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md btn-ghost"><Icon name="plus" size={12}/> Oyuncu Ekle</button>}
+              </div>
+            )}
+          </Panel>
+        );
+      })}
+    </div>
+  );
+}
+
+function ScorersView({ topScorers }) {
+  if (topScorers.length===0) return <EmptyState iconName="goal" title="Henüz gol yok" hint="Takımlar sekmesinden oyunculara gol ekleyebilirsin." />;
+  return (
+    <Panel>
+      <div>
+        {topScorers.map((p,i)=>(
+          <div key={p.id} className="flex items-center gap-3 px-4 py-3" style={{borderTop: i===0?"none":"1px solid rgba(245,243,231,0.06)"}}>
+            <span className="disp tabnums text-sm w-6 text-center" style={{color: i<3?"#FFB238":"rgba(243,241,231,0.4)"}}>{i+1}</span>
+            <span style={{width:8,height:8,borderRadius:2,background:p.teamColor,display:"inline-block"}} />
+            <div className="flex-1"><div className="font-medium text-sm">{p.name}</div><div className="text-xs" style={{color:"rgba(243,241,231,0.45)"}}>{p.teamName} · #{p.number}</div></div>
+            <div className="disp text-xl font-bold tabnums" style={{color:"#FFB238"}}>{p.goals}</div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
